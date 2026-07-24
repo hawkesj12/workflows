@@ -76,10 +76,11 @@ Jobs are independent — one failing never hides another.
 
 ## Inputs
 
-| Input       | Default     | Notes                                                                                      |
-| ----------- | ----------- | ------------------------------------------------------------------------------------------ |
-| `docs`      | `README.md` | space-separated files/globs for lychee                                                     |
-| `scorecard` | `false`     | **public repos only** — it needs `id-token: write` and publishes to the public OpenSSF API |
+| Input       | Default     | Notes                                                                                                                         |
+| ----------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `docs`      | `README.md` | space-separated files/globs for lychee                                                                                        |
+| `scorecard` | `false`     | **public repos only** — it needs `id-token: write` and publishes to the public OpenSSF API                                    |
+| `deps`      | `auto`      | `auto` requires a lockfile and **fails** if there is none; `none` declares the repo dependency-free and **skips** the CVE job |
 
 ## Notes
 
@@ -88,16 +89,27 @@ whoever controls that repo, so it isn't a fixed thing you audited — it's whate
 they publish tomorrow. Dependabot is configured to bump these pins, which is what
 makes SHA-pinning maintainable instead of rot.
 
-**`osv-scanner` needs something to scan.** It reads lockfiles. A repo with only
-loose ranges in `pyproject.toml` and no `uv.lock` gives it no target, and it will
-report finding nothing — which is not the same as finding nothing wrong. Commit a
-lockfile in every caller; without one that lane of the audit does not exist.
+**A check that examined nothing must not report success.** This is the design rule
+the audit is built around, and it has its own failure mode distinct from a broken
+check. A broken check has something wrong with it. A check aimed at empty space has
+nothing wrong with it at all — the code is fine, the config is fine, and it passes.
+A green shield then reads as "no CVEs" when it means "no scan."
 
-**`lychee` fails on zero links, and that is a feature.** If the files you pass in
-`docs` contain no links at all, it exits non-zero with "No links were found."
-rather than passing green — the one check here that refuses to report success
-without having examined anything. Take it as a real signal: either the glob is
-wrong, or the doc should be linking things it isn't.
+Two of the four checks are exposed to this, and they are handled differently:
+
+- **`lychee` fails closed on its own.** Given files with no links it exits non-zero
+  with "No links were found. This usually indicates a configuration error." Take it
+  as a real signal: either the glob is wrong, or the doc should be linking things it
+  isn't. (This is exactly how it caught its own repo's unlinked README.)
+- **`osv-scanner` does not**, so `deps` is enforced from the outside. It reads
+  lockfiles; a repo with only loose ranges in `pyproject.toml` finds no package
+  sources and passes. So a `lockfile present` job runs first and **fails the audit**
+  when it finds no tracked lockfile. If a repo genuinely has no dependencies, say so
+  with `deps: none` and the CVE job is **skipped** rather than passed.
+
+There is deliberately no setting that produces a green CVE job without a lockfile.
+It scans something, it skips, or it fails — and `deps: none` is a claim written in
+your workflow file that a reviewer can disagree with, not an absence nobody notices.
 
 **A caller must grant the union of permissions every called job declares.**
 Permissions only narrow down a reusable-workflow chain. Granting less than the
