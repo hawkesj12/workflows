@@ -53,6 +53,12 @@ jobs:
       # so on a PR it would either fail for the wrong reason or grade a state
       # this change cannot affect. Scorecard belongs on the caller's schedule.
       scorecard: false
+      # This repo is YAML and Markdown — no dependencies, so nothing for a CVE
+      # scan to read. Declared rather than left to a silent pass: the CVE job
+      # SKIPS, and the claim is a line someone wrote and can argue with instead
+      # of an absence nobody notices. The day this repo grows a dependency,
+      # deleting this line turns the lane back on.
+      deps: none
 
   # One stable check for the branch ruleset to require. Requiring the called jobs
   # by name ("audit-itself / zizmor (workflow security)", …) breaks the moment a

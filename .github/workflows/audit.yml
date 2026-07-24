@@ -29,6 +29,16 @@ on:
           publishes results to the public OpenSSF API. Leave off for private repos.
         type: boolean
         default: false
+      deps:
+        description: >-
+          Whether this repo has dependencies to scan. "auto" (the default) requires
+          a lockfile and FAILS the audit if none is found, because osv-scanner with
+          no lockfile reports success having examined nothing. Set "none" to declare
+          a repo genuinely dependency-free — the CVE lane is then SKIPPED, which
+          reads as skipped and not as passing. There is deliberately no setting that
+          yields a GREEN CVE job without a lockfile.
+        type: string
+        default: auto
 
 permissions:
   contents: read
@@ -77,8 +87,62 @@ jobs:
   # `google/osv-scanner-action@<sha>` fails with "Top level 'runs:' section is
   # required"), and the action's own description says it is "not intended to be
   # used directly" — invoking it that way exited 127 on arg parsing.
+  #
+  # PRECONDITION. osv-scanner reads lockfiles. Point it at a repo that has none
+  # and it reports success having examined nothing — a green shield that reads
+  # "no CVEs" but means "no scan". That is the worst state of the four checks
+  # here, because nothing is broken: the code is fine, the config is fine, the
+  # check is just aimed at empty space.
+  #
+  # lychee already refuses to pass on empty input ("No links were found"). This
+  # job gives osv-scanner the same property from the outside, since the scan
+  # itself runs in Google's reusable workflow and cannot be given a step.
+  lockfile:
+    name: lockfile present (CVE precondition)
+    if: inputs.deps != 'none'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: A CVE scan needs a lockfile to be worth anything
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only TRACKED files count. An uncommitted lockfile is not what the
+          # scheduled audit will check out next Monday.
+          FOUND=$(git ls-files | grep -Ei '(^|/)(uv\.lock|poetry\.lock|Pipfile\.lock|pdm\.lock|requirements[^/]*\.txt|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|npm-shrinkwrap\.json|Cargo\.lock|go\.sum|Gemfile\.lock|composer\.lock|gradle\.lockfile|mix\.lock|pubspec\.lock|renv\.lock|conan\.lock)$' || true)
+          if [ -n "$FOUND" ]; then
+            echo "Lockfiles the CVE scan can read:"
+            echo "$FOUND" | sed 's/^/  /'
+            exit 0
+          fi
+          cat >&2 <<'MSG'
+          No lockfile found — the CVE lane of this audit is INACTIVE.
+
+          osv-scanner resolves dependencies from lockfiles. With none committed it
+          finds no package sources and passes, so a green audit would tell you
+          "no known CVEs" when it actually means "nothing was scanned".
+
+          Fix it one of two ways, both honest:
+            * Commit a lockfile.  Python: `uv lock` (or poetry/pdm/pip-compile).
+              Node: package-lock.json / pnpm-lock.yaml. It does not have to ship
+              in your package — it pins the resolution CI audits.
+            * If this repo genuinely has no dependencies, say so in the caller:
+                  with:
+                    deps: none
+              The CVE job is then skipped rather than passing, and the claim is
+              visible in your workflow file instead of implied by silence.
+          MSG
+          exit 1
+
   vulnerabilities:
     name: osv-scanner (CVEs)
+    # Skipped when the precondition fails or when deps: none was declared. A
+    # skipped job is honest; a passing one that scanned nothing is not.
+    needs: lockfile
     permissions:
       # Must MATCH what the called workflow declares, and the caller must grant at
       # least this much — permissions only narrow down a reusable-workflow chain,
