@@ -80,8 +80,12 @@ jobs:
   vulnerabilities:
     name: osv-scanner (CVEs)
     permissions:
+      # Must MATCH what the called workflow declares, and the caller must grant at
+      # least this much — permissions only narrow down a reusable-workflow chain,
+      # never widen. Getting this wrong is a startup_failure with no log at all.
       contents: read
       actions: read
+      security-events: write
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
     with:
       scan-args: |-
