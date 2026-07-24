@@ -33,13 +33,11 @@ permissions:
 
 jobs:
   audit:
-    uses: hawkesj12/workflows/.github/workflows/audit.yml@v1.0.0
+    uses: hawkesj12/workflows/.github/workflows/audit.yml@v1.2.0
     permissions:
       # The UNION of what every called job declares — see Notes. Omitting any of
       # these is a startup_failure with no log.
       contents: read
-      actions: read # osv-scanner
-      security-events: write # osv-scanner
       id-token: write # Scorecard — required even when scorecard: false
     with:
       docs: "README.md CHANGELOG.md docs/"
@@ -80,7 +78,7 @@ Jobs are independent — one failing never hides another.
 | ----------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `docs`      | `README.md` | space-separated files/globs for lychee                                                                                        |
 | `scorecard` | `false`     | **public repos only** — it needs `id-token: write` and publishes to the public OpenSSF API                                    |
-| `deps`      | `auto`      | `auto` requires a lockfile and **fails** if there is none; `none` declares the repo dependency-free and **skips** the CVE job |
+| `deps`      | `auto`      | `auto` scans; osv-scanner fails on its own if it finds no packages. `none` declares the repo dependency-free and **skips** the CVE job |
 
 ## Notes
 
@@ -101,15 +99,27 @@ Two of the four checks are exposed to this, and they are handled differently:
   with "No links were found. This usually indicates a configuration error." Take it
   as a real signal: either the glob is wrong, or the doc should be linking things it
   isn't. (This is exactly how it caught its own repo's unlinked README.)
-- **`osv-scanner` does not**, so `deps` is enforced from the outside. It reads
-  lockfiles; a repo with only loose ranges in `pyproject.toml` finds no package
-  sources and passes. So a `lockfile present` job runs first and **fails the audit**
-  when it finds no tracked lockfile. If a repo genuinely has no dependencies, say so
-  with `deps: none` and the CVE job is **skipped** rather than passed.
+- **`osv-scanner` also fails closed — but only if you run the binary.** It exits
+  128 with "No package sources found", and both of Google's wrappers throw that
+  away. The reusable workflow runs the scanner with `continue-on-error: true` and
+  reports from a `results.json` the failed scan never wrote. The action alone
+  downgrades exit 128 to `##[warning]No lockfiles found` and passes — its own log
+  calls that deprecated. So this audit downloads the pinned, checksum-verified
+  binary and runs it, which is the only path where the exit code survives. If a
+  repo genuinely has no dependencies, say so with `deps: none` and the CVE job is
+  **skipped**.
 
-There is deliberately no setting that produces a green CVE job without a lockfile.
-It scans something, it skips, or it fails — and `deps: none` is a claim written in
-your workflow file that a reviewer can disagree with, not an absence nobody notices.
+There is deliberately no setting that produces a green CVE job without a real scan.
+It scans, it skips, or it fails — and `deps: none` is a claim written in your
+workflow file that a reviewer can disagree with, not an absence nobody notices.
+
+The general lesson, which cost two wrong fixes to learn: **check what your tooling
+does with the exit code before building anything around it.** v1.1.0 added a
+lockfile-detection job that covered exactly one of the many ways a scan can fail
+silently. The first attempt at v1.2.0 dropped that job for Google's action, on the
+assumption it preserved the exit code — it does not. Only running the binary does,
+and that was settled by pushing each version at a repo with no lockfile and reading
+the result, not by reasoning about it.
 
 **A caller must grant the union of permissions every called job declares.**
 Permissions only narrow down a reusable-workflow chain. Granting less than the
@@ -121,7 +131,9 @@ the chain is validated before any condition is evaluated, so the Scorecard job's
 ```yaml
 permissions:
   contents: read
-  actions: read # osv-scanner
-  security-events: write # osv-scanner
   id-token: write # Scorecard — required even when scorecard: false
 ```
+
+Callers upgrading from v1.1.0 can drop `actions: read` and
+`security-events: write`. Those were Google's reusable workflow's requirements;
+v1.2.0 no longer uses it.

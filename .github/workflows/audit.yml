@@ -31,12 +31,12 @@ on:
         default: false
       deps:
         description: >-
-          Whether this repo has dependencies to scan. "auto" (the default) requires
-          a lockfile and FAILS the audit if none is found, because osv-scanner with
-          no lockfile reports success having examined nothing. Set "none" to declare
-          a repo genuinely dependency-free — the CVE lane is then SKIPPED, which
-          reads as skipped and not as passing. There is deliberately no setting that
-          yields a GREEN CVE job without a lockfile.
+          Whether this repo has dependencies to scan. "auto" (the default) runs
+          osv-scanner, which FAILS on its own (exit 128) when it finds no package
+          sources — so a repo with no lockfile gets a red audit, not a green one
+          that scanned nothing. Set "none" only for a genuinely dependency-free
+          repo: the CVE job is then SKIPPED, which reads as skipped rather than
+          passing. There is no setting that reports success without a real scan.
         type: string
         default: auto
 
@@ -82,81 +82,63 @@ jobs:
   # ── Known vulnerabilities ────────────────────────────────────────────
   # The other genuinely level-triggered check: a CVE published today against a
   # dependency you last touched months ago.
-  # Uses Google's REUSABLE WORKFLOW, not the bare action. Two reasons, both
-  # learned by running it: the repo root has no action.yml (pinning
-  # `google/osv-scanner-action@<sha>` fails with "Top level 'runs:' section is
-  # required"), and the action's own description says it is "not intended to be
-  # used directly" — invoking it that way exited 127 on arg parsing.
   #
-  # PRECONDITION. osv-scanner reads lockfiles. Point it at a repo that has none
-  # and it reports success having examined nothing — a green shield that reads
-  # "no CVEs" but means "no scan". That is the worst state of the four checks
-  # here, because nothing is broken: the code is fine, the config is fine, the
-  # check is just aimed at empty space.
+  # Runs the BINARY, not Google's reusable workflow and not their action. Both
+  # wrappers turn a failed scan into a green job, and that was measured here, not
+  # assumed:
   #
-  # lychee already refuses to pass on empty input ("No links were found"). This
-  # job gives osv-scanner the same property from the outside, since the scan
-  # itself runs in Google's reusable workflow and cannot be given a step.
-  lockfile:
-    name: lockfile present (CVE precondition)
+  #   * the reusable workflow runs the scanner with `continue-on-error: true`,
+  #     then reports from a results.json the failed scan never wrote — so ANY
+  #     failure (bad lockfile, deps.dev outage, OOM, registry timeout) exits 0.
+  #   * the action alone is no better for the case that actually bites. On a repo
+  #     with no lockfile the scanner correctly exits 128 and the action downgrades
+  #     it to `##[warning]No lockfiles found` and passes. Its own log calls this
+  #     deprecated and says to pass --allow-no-lockfiles for it — i.e. tolerance
+  #     is today's default and erroring is the future one. We want the future one.
+  #
+  # The binary just returns its exit code, so every failure mode is covered at
+  # once — including ones nobody has thought of — with nothing to maintain and no
+  # third-party action in the CVE path at all. Pinned by version AND SHA-256, so
+  # a retagged release cannot change what runs.
+  #
+  # Pinning the binary does mean Dependabot cannot bump it. That matters much less
+  # than it looks: the vulnerability DATA is fetched live from OSV at scan time,
+  # so an older binary still finds today's CVEs. The version only governs
+  # ecosystem/lockfile-format support, which is a deliberate upgrade, not a race.
+  vulnerabilities:
+    name: osv-scanner (CVEs)
+    # `deps: none` skips this job. A skipped job is an honest "nothing to scan";
+    # a passing one that scanned nothing is not. There is deliberately no third
+    # option that reports success without a real scan.
     if: inputs.deps != 'none'
     runs-on: ubuntu-latest
     permissions:
+      # Only contents: read. The actions: read + security-events: write callers
+      # used to need were the reusable workflow's requirements, not the scanner's.
       contents: read
+    env:
+      OSV_VERSION: v2.4.0
+      OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: A CVE scan needs a lockfile to be worth anything
+      - name: Install osv-scanner (pinned, checksum-verified)
         shell: bash
         run: |
           set -euo pipefail
-          # Only TRACKED files count. An uncommitted lockfile is not what the
-          # scheduled audit will check out next Monday.
-          FOUND=$(git ls-files | grep -Ei '(^|/)(uv\.lock|poetry\.lock|Pipfile\.lock|pdm\.lock|requirements[^/]*\.txt|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|npm-shrinkwrap\.json|Cargo\.lock|go\.sum|Gemfile\.lock|composer\.lock|gradle\.lockfile|mix\.lock|pubspec\.lock|renv\.lock|conan\.lock)$' || true)
-          if [ -n "$FOUND" ]; then
-            echo "Lockfiles the CVE scan can read:"
-            echo "$FOUND" | sed 's/^/  /'
-            exit 0
-          fi
-          cat >&2 <<'MSG'
-          No lockfile found — the CVE lane of this audit is INACTIVE.
-
-          osv-scanner resolves dependencies from lockfiles. With none committed it
-          finds no package sources and passes, so a green audit would tell you
-          "no known CVEs" when it actually means "nothing was scanned".
-
-          Fix it one of two ways, both honest:
-            * Commit a lockfile.  Python: `uv lock` (or poetry/pdm/pip-compile).
-              Node: package-lock.json / pnpm-lock.yaml. It does not have to ship
-              in your package — it pins the resolution CI audits.
-            * If this repo genuinely has no dependencies, say so in the caller:
-                  with:
-                    deps: none
-              The CVE job is then skipped rather than passing, and the claim is
-              visible in your workflow file instead of implied by silence.
-          MSG
-          exit 1
-
-  vulnerabilities:
-    name: osv-scanner (CVEs)
-    # Skipped when the precondition fails or when deps: none was declared. A
-    # skipped job is honest; a passing one that scanned nothing is not.
-    needs: lockfile
-    permissions:
-      # Must MATCH what the called workflow declares, and the caller must grant at
-      # least this much — permissions only narrow down a reusable-workflow chain,
-      # never widen. Getting this wrong is a startup_failure with no log at all.
-      contents: read
-      actions: read
-      security-events: write
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
-    with:
-      scan-args: |-
-        -r
-        ./
-      # SARIF upload needs Code Scanning enabled; keep this portable across repos.
-      upload-sarif: false
+          URL="https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          curl --fail --silent --show-error --location --retry 3 -o osv-scanner "$URL"
+          echo "${OSV_SHA256}  osv-scanner" | sha256sum --check --status \
+            || { echo "::error::osv-scanner checksum mismatch — refusing to run it"; exit 1; }
+          chmod +x osv-scanner
+      - name: Scan
+        shell: bash
+        # No `continue-on-error`, no wrapper, no --allow-no-lockfiles. Exit 0 here
+        # means a scan ran and found nothing. Every other outcome is a failure,
+        # which is the entire point: 128 (no package sources) and 1 (vulns found)
+        # both stop the audit rather than quietly passing.
+        run: ./osv-scanner scan source --recursive ./
 
   # ── Repo posture ─────────────────────────────────────────────────────
   # Branch protection, pinned dependencies, signed releases, CI-tests-required.

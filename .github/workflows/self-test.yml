@@ -38,8 +38,6 @@ jobs:
       # down a reusable-workflow chain, so granting less than a called workflow
       # asks for is a startup_failure — no jobs, no log, no annotation.
       contents: read
-      actions: read # osv-scanner's reusable workflow
-      security-events: write # ditto (declared even with upload-sarif: false)
       # Required even though scorecard is false below. `if:` gates whether a job
       # RUNS; the permission chain is validated before any `if:` is evaluated, so
       # a skipped job's declared permissions still have to be granted. Omitting
