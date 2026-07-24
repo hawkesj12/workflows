@@ -40,6 +40,11 @@ jobs:
       contents: read
       actions: read # osv-scanner's reusable workflow
       security-events: write # ditto (declared even with upload-sarif: false)
+      # Required even though scorecard is false below. `if:` gates whether a job
+      # RUNS; the permission chain is validated before any `if:` is evaluated, so
+      # a skipped job's declared permissions still have to be granted. Omitting
+      # this is a startup_failure, which is how this very file first failed.
+      id-token: write
     with:
       docs: "README.md"
       # Scorecard is OFF here on purpose, and it is not a coverage gap. It grades
