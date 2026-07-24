@@ -53,3 +53,19 @@ jobs:
       # so on a PR it would either fail for the wrong reason or grade a state
       # this change cannot affect. Scorecard belongs on the caller's schedule.
       scorecard: false
+
+  # One stable check for the branch ruleset to require. Requiring the called jobs
+  # by name ("audit-itself / zizmor (workflow security)", …) breaks the moment a
+  # job is added or renamed in audit.yml — which, since this repo exists to change
+  # audit.yml, is the expected case rather than the rare one.
+  # `if: always()` is load-bearing: without it this job is SKIPPED when the audit
+  # fails, and a skipped required check does not read as a failure.
+  self-test-ok:
+    if: always()
+    needs: audit-itself
+    runs-on: ubuntu-latest
+    steps:
+      - name: The audit must have succeeded against this repo
+        run: |
+          echo "audit-itself result: ${{ needs.audit-itself.result }}"
+          [ "${{ needs.audit-itself.result }}" = "success" ] || exit 1
