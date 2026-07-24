@@ -33,14 +33,35 @@ permissions:
 
 jobs:
   audit:
-    uses: hawkesj12/workflows/.github/workflows/audit.yml@main
+    uses: hawkesj12/workflows/.github/workflows/audit.yml@v1.0.0
+    permissions:
+      # The UNION of what every called job declares — see Notes. Omitting any of
+      # these is a startup_failure with no log.
+      contents: read
+      actions: read # osv-scanner
+      security-events: write # osv-scanner
+      id-token: write # Scorecard — required even when scorecard: false
     with:
       docs: "README.md CHANGELOG.md docs/"
       scorecard: true # public repos only — see below
 ```
 
-That's the whole integration. Improve `audit.yml` here and every caller picks it
-up on its next run.
+That's the whole integration. Two things to get right, both covered in Notes:
+commit a **lockfile** so the CVE scan has a target, and grant the **full
+permissions block** above.
+
+## Versioning
+
+Pin a **tag**, not `@main`. Not because this repo is untrusted — it's mine — but
+because `@main` has no staging channel: every caller's next scheduled run
+executes whatever was last pushed here, and you learn from failure emails instead
+of a diff. A tag makes `main` the place changes get tried (gated by
+`self-test.yml`, which runs the audit against this repo on every PR) and the tag
+the thing the fleet actually runs.
+
+Dependabot maintains the pin for you — its `github-actions` ecosystem
+[covers reusable-workflow references](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/keeping-your-actions-up-to-date-with-dependabot),
+so each caller gets its own PR on a new release and converges on your merge.
 
 ## What it runs
 
