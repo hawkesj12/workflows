@@ -72,24 +72,23 @@ jobs:
   # ── Known vulnerabilities ────────────────────────────────────────────
   # The other genuinely level-triggered check: a CVE published today against a
   # dependency you last touched months ago.
+  # Uses Google's REUSABLE WORKFLOW, not the bare action. Two reasons, both
+  # learned by running it: the repo root has no action.yml (pinning
+  # `google/osv-scanner-action@<sha>` fails with "Top level 'runs:' section is
+  # required"), and the action's own description says it is "not intended to be
+  # used directly" — invoking it that way exited 127 on arg parsing.
   vulnerabilities:
     name: osv-scanner (CVEs)
-    runs-on: ubuntu-latest
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-        # NOTE the subdirectory: the repo ROOT has no action.yml, so pinning
-        # `google/osv-scanner-action@<sha>` fails with "Top level 'runs:' section
-        # is required". The action itself lives one level down.
-      - uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
-        with:
-          scan-args: |-
-            --recursive
-            --skip-git
-            ./
+      actions: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    with:
+      scan-args: |-
+        -r
+        ./
+      # SARIF upload needs Code Scanning enabled; keep this portable across repos.
+      upload-sarif: false
 
   # ── Repo posture ─────────────────────────────────────────────────────
   # Branch protection, pinned dependencies, signed releases, CI-tests-required.
