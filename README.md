@@ -99,21 +99,27 @@ Two of the four checks are exposed to this, and they are handled differently:
   with "No links were found. This usually indicates a configuration error." Take it
   as a real signal: either the glob is wrong, or the doc should be linking things it
   isn't. (This is exactly how it caught its own repo's unlinked README.)
-- **`osv-scanner` also fails closed** — exit 128, "No package sources found" — but
-  only if you let its exit code reach you. Google's reusable workflow runs it with
-  `continue-on-error: true` and reports from a `results.json` the failed scan never
-  wrote, so every scan failure exits 0. This audit therefore calls the scanner
-  action **directly** and keeps the real exit code. If a repo genuinely has no
-  dependencies, say so with `deps: none` and the CVE job is **skipped**.
+- **`osv-scanner` also fails closed — but only if you run the binary.** It exits
+  128 with "No package sources found", and both of Google's wrappers throw that
+  away. The reusable workflow runs the scanner with `continue-on-error: true` and
+  reports from a `results.json` the failed scan never wrote. The action alone
+  downgrades exit 128 to `##[warning]No lockfiles found` and passes — its own log
+  calls that deprecated. So this audit downloads the pinned, checksum-verified
+  binary and runs it, which is the only path where the exit code survives. If a
+  repo genuinely has no dependencies, say so with `deps: none` and the CVE job is
+  **skipped**.
 
 There is deliberately no setting that produces a green CVE job without a real scan.
 It scans, it skips, or it fails — and `deps: none` is a claim written in your
 workflow file that a reviewer can disagree with, not an absence nobody notices.
 
-The general lesson, which cost a wrong fix to learn: **check what your scanner
-wrapper does with the exit code before building a guard around the wrapper.** The
-first version of this shipped a lockfile-detection job that covered exactly one of
-the many ways a scan can fail silently.
+The general lesson, which cost two wrong fixes to learn: **check what your tooling
+does with the exit code before building anything around it.** v1.1.0 added a
+lockfile-detection job that covered exactly one of the many ways a scan can fail
+silently. The first attempt at v1.2.0 dropped that job for Google's action, on the
+assumption it preserved the exit code — it does not. Only running the binary does,
+and that was settled by pushing each version at a repo with no lockfile and reading
+the result, not by reasoning about it.
 
 **A caller must grant the union of permissions every called job declares.**
 Permissions only narrow down a reusable-workflow chain. Granting less than the
