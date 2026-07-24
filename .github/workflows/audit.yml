@@ -1,0 +1,109 @@
+name: Audit
+
+# A REUSABLE workflow — it does not run on its own. Other repos call it:
+#
+#   jobs:
+#     audit:
+#       uses: hawkesj12/workflows/.github/workflows/audit.yml@main
+#
+# It exists because these four checks find problems that appear WITHOUT your code
+# changing: a CVE gets published against a dependency you haven't touched, a link
+# in your README rots because someone else moved a page, an action tag gets
+# repointed. A commit-triggered check can never catch those — there is no commit
+# to trigger on. So the caller runs this on a schedule, and a failure emails you.
+#
+# Every job is independent: one failing does not hide the others.
+# Every action is pinned to a SHA, not a tag — a tag can be repointed by whoever
+# controls that repo, which is exactly what zizmor's unpinned-uses audit flags.
+
+on:
+  workflow_call:
+    inputs:
+      docs:
+        description: "Files/globs lychee checks for dead links."
+        type: string
+        default: "README.md"
+      scorecard:
+        description: >-
+          Run OpenSSF Scorecard. PUBLIC REPOS ONLY — it needs id-token: write and
+          publishes results to the public OpenSSF API. Leave off for private repos.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Workflow security ────────────────────────────────────────────────
+  # Template injection, credential leakage, unpinned actions, cache poisoning.
+  # Cheap and fast — nothing here reaches the network beyond the checkout.
+  workflow-security:
+    name: zizmor (workflow security)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false # else the token lands in .git/config (zizmor: artipacked)
+      - uses: zizmorcore/zizmor-action@6fc4b006235f201fdab3722e17240ab420d580e5 # v0.6.1
+        with:
+          advanced-security: false # SARIF upload needs GHAS; plain output works everywhere
+
+  # ── Dead links ───────────────────────────────────────────────────────
+  # Link rot is the purest level-triggered failure: your docs stop being true
+  # while nothing in your repo changes.
+  links:
+    name: lychee (dead links)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          # --max-retries absorbs a flaky host so a transient blip doesn't page you
+          # over someone else's downtime.
+          args: --no-progress --max-retries 3 ${{ inputs.docs }}
+          fail: true
+
+  # ── Known vulnerabilities ────────────────────────────────────────────
+  # The other genuinely level-triggered check: a CVE published today against a
+  # dependency you last touched months ago.
+  vulnerabilities:
+    name: osv-scanner (CVEs)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: google/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+        with:
+          scan-args: |-
+            --recursive
+            --skip-git
+            ./
+
+  # ── Repo posture ─────────────────────────────────────────────────────
+  # Branch protection, pinned dependencies, signed releases, CI-tests-required.
+  # Opt-in: publishing results requires a public repo and an OIDC token.
+  posture:
+    name: scorecard (repo posture)
+    if: inputs.scorecard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC, so the OpenSSF API can verify who published
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true

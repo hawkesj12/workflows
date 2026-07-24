@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # The whole point of SHA-pinning actions is that a tag can be repointed under
+  # you. Dependabot bumping the pins is what keeps that maintainable instead of
+  # letting them rot at whatever SHA they were written at.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
