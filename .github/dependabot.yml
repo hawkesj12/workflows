@@ -3,7 +3,20 @@ updates:
   # The whole point of SHA-pinning actions is that a tag can be repointed under
   # you. Dependabot bumping the pins is what keeps that maintainable instead of
   # letting them rot at whatever SHA they were written at.
+  #
+  # These pins matter more than most: they are the scanners every caller runs.
+  # A compromised scanner is a compromised audit across the whole fleet.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      # Don't take a brand-new release the instant it publishes. A compromised
+      # version is usually caught within days; waiting a week means the ecosystem
+      # notices before you adopt it. (zizmor: dependabot-cooldown)
+      default-days: 7
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
