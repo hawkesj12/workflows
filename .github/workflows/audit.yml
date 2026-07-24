@@ -83,27 +83,28 @@ jobs:
   # The other genuinely level-triggered check: a CVE published today against a
   # dependency you last touched months ago.
   #
-  # Calls the SUBDIRECTORY action directly, NOT Google's reusable workflow, and
-  # that choice is the whole check. Their wrapper runs the scanner with
-  # `continue-on-error: true` and then reports from a results.json the failed
-  # scan never wrote — so ANY scan failure (no lockfile, malformed lockfile, a
-  # deps.dev outage, an OOM, a registry timeout) exits 0 and the job goes GREEN.
-  # A green shield then reads "no CVEs" when it means "no scan".
+  # Runs the BINARY, not Google's reusable workflow and not their action. Both
+  # wrappers turn a failed scan into a green job, and that was measured here, not
+  # assumed:
   #
-  # osv-scanner itself fails closed — exit 128 with no package sources. Calling
-  # the action directly keeps that exit code, which covers every failure mode at
-  # once instead of the one you happened to hit, in every ecosystem the scanner
-  # will ever support, with nothing here to maintain.
+  #   * the reusable workflow runs the scanner with `continue-on-error: true`,
+  #     then reports from a results.json the failed scan never wrote — so ANY
+  #     failure (bad lockfile, deps.dev outage, OOM, registry timeout) exits 0.
+  #   * the action alone is no better for the case that actually bites. On a repo
+  #     with no lockfile the scanner correctly exits 128 and the action downgrades
+  #     it to `##[warning]No lockfiles found` and passes. Its own log calls this
+  #     deprecated and says to pass --allow-no-lockfiles for it — i.e. tolerance
+  #     is today's default and erroring is the future one. We want the future one.
   #
-  # Nesting their workflow also imports their pins, and theirs are worse than
-  # ours: at v2.3.8 it uses `actions/download-artifact@v8` (unpinned), and it
-  # pins the scanner action to 8dc0919 while commenting it `# v2.3.8` — a commit
-  # that is not the v2.3.8 tag. An audit whose premise is SHA-pinning should not
-  # inherit a floating tag and a mislabelled pin it can neither see nor bump.
-  # (zizmor's ref-version-mismatch caught that here, after it was copied in.)
+  # The binary just returns its exit code, so every failure mode is covered at
+  # once — including ones nobody has thought of — with nothing to maintain and no
+  # third-party action in the CVE path at all. Pinned by version AND SHA-256, so
+  # a retagged release cannot change what runs.
   #
-  # Cost of not nesting: no SARIF upload (already off — it needs Code Scanning)
-  # and no annotations reporter. Worth it for an exit code that means something.
+  # Pinning the binary does mean Dependabot cannot bump it. That matters much less
+  # than it looks: the vulnerability DATA is fetched live from OSV at scan time,
+  # so an older binary still finds today's CVEs. The version only governs
+  # ecosystem/lockfile-format support, which is a deliberate upgrade, not a race.
   vulnerabilities:
     name: osv-scanner (CVEs)
     # `deps: none` skips this job. A skipped job is an honest "nothing to scan";
@@ -112,18 +113,32 @@ jobs:
     if: inputs.deps != 'none'
     runs-on: ubuntu-latest
     permissions:
-      # Only contents: read. The actions: read + security-events: write that
-      # callers used to need were the wrapper's requirements, not the scanner's.
+      # Only contents: read. The actions: read + security-events: write callers
+      # used to need were the reusable workflow's requirements, not the scanner's.
       contents: read
+    env:
+      OSV_VERSION: v2.4.0
+      OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
-        with:
-          scan-args: |-
-            -r
-            ./
+      - name: Install osv-scanner (pinned, checksum-verified)
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          curl --fail --silent --show-error --location --retry 3 -o osv-scanner "$URL"
+          echo "${OSV_SHA256}  osv-scanner" | sha256sum --check --status \
+            || { echo "::error::osv-scanner checksum mismatch — refusing to run it"; exit 1; }
+          chmod +x osv-scanner
+      - name: Scan
+        shell: bash
+        # No `continue-on-error`, no wrapper, no --allow-no-lockfiles. Exit 0 here
+        # means a scan ran and found nothing. Every other outcome is a failure,
+        # which is the entire point: 128 (no package sources) and 1 (vulns found)
+        # both stop the audit rather than quietly passing.
+        run: ./osv-scanner scan source --recursive ./
 
   # ── Repo posture ─────────────────────────────────────────────────────
   # Branch protection, pinned dependencies, signed releases, CI-tests-required.
