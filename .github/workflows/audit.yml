@@ -81,7 +81,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: google/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+        # NOTE the subdirectory: the repo ROOT has no action.yml, so pinning
+        # `google/osv-scanner-action@<sha>` fails with "Top level 'runs:' section
+        # is required". The action itself lives one level down.
+      - uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
         with:
           scan-args: |-
             --recursive
