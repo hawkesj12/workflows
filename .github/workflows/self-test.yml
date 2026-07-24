@@ -1,0 +1,55 @@
+name: Self-test
+
+# audit.yml is a REUSABLE workflow, so nothing here runs it — which meant its
+# only test environment was production, in every calling repo at once. It shipped
+# broken exactly once that way (a bad action pin; the failure surfaced when a
+# caller dispatched it, not when it was pushed).
+#
+# This runs the real audit against THIS repo on every PR. If audit.yml is broken,
+# the PR is red — not eight other repos next Monday morning. It is the staging
+# channel that lets `main` be the place changes are tried and a tag be the thing
+# callers actually pin.
+#
+# It also genuinely audits this repo: zizmor lints these very workflow files, and
+# a repo whose whole job is other repos' supply-chain hygiene should pass its own
+# checks first.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  audit-itself:
+    # A relative ref, so a PR tests the audit.yml IN THAT PR — not the copy on
+    # main. Pointing at hawkesj12/workflows/...@main here would test the version
+    # being replaced and pass every broken change.
+    uses: ./.github/workflows/audit.yml
+    permissions:
+      # The UNION of what every called job declares. Permissions only narrow
+      # down a reusable-workflow chain, so granting less than a called workflow
+      # asks for is a startup_failure — no jobs, no log, no annotation.
+      contents: read
+      actions: read # osv-scanner's reusable workflow
+      security-events: write # ditto (declared even with upload-sarif: false)
+      # Required even though scorecard is false below. `if:` gates whether a job
+      # RUNS; the permission chain is validated before any `if:` is evaluated, so
+      # a skipped job's declared permissions still have to be granted. Omitting
+      # this is a startup_failure, which is how this very file first failed.
+      id-token: write
+    with:
+      docs: "README.md"
+      # Scorecard is OFF here on purpose, and it is not a coverage gap. It grades
+      # repo SETTINGS (branch protection, signed releases) rather than anything
+      # in the diff, and publishing needs an OIDC token a fork PR cannot mint —
+      # so on a PR it would either fail for the wrong reason or grade a state
+      # this change cannot affect. Scorecard belongs on the caller's schedule.
+      scorecard: false
