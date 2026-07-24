@@ -56,7 +56,7 @@ jobs:
       # SKIPS, and the claim is a line someone wrote and can argue with instead
       # of an absence nobody notices. The day this repo grows a dependency,
       # deleting this line turns the lane back on.
-      deps: auto # TEMP — proving the scanner itself fails closed
+      deps: none
 
   # One stable check for the branch ruleset to require. Requiring the called jobs
   # by name ("audit-itself / zizmor (workflow security)", …) breaks the moment a
