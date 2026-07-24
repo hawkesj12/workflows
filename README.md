@@ -44,12 +44,12 @@ up on its next run.
 
 ## What it runs
 
-| Job                 | Tool              | Catches                                                  |
-| ------------------- | ----------------- | -------------------------------------------------------- |
-| `workflow-security` | zizmor            | template injection, credential leakage, unpinned actions |
-| `links`             | lychee            | dead links in your docs                                  |
-| `vulnerabilities`   | osv-scanner       | known CVEs in your dependencies                          |
-| `posture`           | OpenSSF Scorecard | branch protection, pinned deps, signed releases (opt-in) |
+| Job                 | Tool                                                         | Catches                                                  |
+| ------------------- | ------------------------------------------------------------ | -------------------------------------------------------- |
+| `workflow-security` | [zizmor](https://docs.zizmor.sh/)                            | template injection, credential leakage, unpinned actions |
+| `links`             | [lychee](https://lychee.cli.rs/)                             | dead links in your docs                                  |
+| `vulnerabilities`   | [osv-scanner](https://google.github.io/osv-scanner/)         | known CVEs in your dependencies                          |
+| `posture`           | [OpenSSF Scorecard](https://openssf.org/projects/scorecard/) | branch protection, pinned deps, signed releases (opt-in) |
 
 Jobs are independent — one failing never hides another.
 
@@ -69,4 +69,26 @@ makes SHA-pinning maintainable instead of rot.
 
 **`osv-scanner` needs something to scan.** It reads lockfiles. A repo with only
 loose ranges in `pyproject.toml` and no `uv.lock` gives it no target, and it will
-report finding nothing — which is not the same as finding nothing wrong.
+report finding nothing — which is not the same as finding nothing wrong. Commit a
+lockfile in every caller; without one that lane of the audit does not exist.
+
+**`lychee` fails on zero links, and that is a feature.** If the files you pass in
+`docs` contain no links at all, it exits non-zero with "No links were found."
+rather than passing green — the one check here that refuses to report success
+without having examined anything. Take it as a real signal: either the glob is
+wrong, or the doc should be linking things it isn't.
+
+**A caller must grant the union of permissions every called job declares.**
+Permissions only narrow down a reusable-workflow chain. Granting less than the
+callee asks for is a `startup_failure` with no jobs, no log, and no annotation —
+the hardest failure here to diagnose. Note that a job's `if:` does not exempt it:
+the chain is validated before any condition is evaluated, so the Scorecard job's
+`id-token: write` is required even when `scorecard: false`.
+
+```yaml
+permissions:
+  contents: read
+  actions: read # osv-scanner
+  security-events: write # osv-scanner
+  id-token: write # Scorecard — required even when scorecard: false
+```
