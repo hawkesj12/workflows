@@ -33,13 +33,11 @@ permissions:
 
 jobs:
   audit:
-    uses: hawkesj12/workflows/.github/workflows/audit.yml@v1.0.0
+    uses: hawkesj12/workflows/.github/workflows/audit.yml@v1.2.0
     permissions:
       # The UNION of what every called job declares — see Notes. Omitting any of
       # these is a startup_failure with no log.
       contents: read
-      actions: read # osv-scanner
-      security-events: write # osv-scanner
       id-token: write # Scorecard — required even when scorecard: false
     with:
       docs: "README.md CHANGELOG.md docs/"
@@ -80,7 +78,7 @@ Jobs are independent — one failing never hides another.
 | ----------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `docs`      | `README.md` | space-separated files/globs for lychee                                                                                        |
 | `scorecard` | `false`     | **public repos only** — it needs `id-token: write` and publishes to the public OpenSSF API                                    |
-| `deps`      | `auto`      | `auto` requires a lockfile and **fails** if there is none; `none` declares the repo dependency-free and **skips** the CVE job |
+| `deps`      | `auto`      | `auto` scans; osv-scanner fails on its own if it finds no packages. `none` declares the repo dependency-free and **skips** the CVE job |
 
 ## Notes
 
@@ -101,15 +99,21 @@ Two of the four checks are exposed to this, and they are handled differently:
   with "No links were found. This usually indicates a configuration error." Take it
   as a real signal: either the glob is wrong, or the doc should be linking things it
   isn't. (This is exactly how it caught its own repo's unlinked README.)
-- **`osv-scanner` does not**, so `deps` is enforced from the outside. It reads
-  lockfiles; a repo with only loose ranges in `pyproject.toml` finds no package
-  sources and passes. So a `lockfile present` job runs first and **fails the audit**
-  when it finds no tracked lockfile. If a repo genuinely has no dependencies, say so
-  with `deps: none` and the CVE job is **skipped** rather than passed.
+- **`osv-scanner` also fails closed** — exit 128, "No package sources found" — but
+  only if you let its exit code reach you. Google's reusable workflow runs it with
+  `continue-on-error: true` and reports from a `results.json` the failed scan never
+  wrote, so every scan failure exits 0. This audit therefore calls the scanner
+  action **directly** and keeps the real exit code. If a repo genuinely has no
+  dependencies, say so with `deps: none` and the CVE job is **skipped**.
 
-There is deliberately no setting that produces a green CVE job without a lockfile.
-It scans something, it skips, or it fails — and `deps: none` is a claim written in
-your workflow file that a reviewer can disagree with, not an absence nobody notices.
+There is deliberately no setting that produces a green CVE job without a real scan.
+It scans, it skips, or it fails — and `deps: none` is a claim written in your
+workflow file that a reviewer can disagree with, not an absence nobody notices.
+
+The general lesson, which cost a wrong fix to learn: **check what your scanner
+wrapper does with the exit code before building a guard around the wrapper.** The
+first version of this shipped a lockfile-detection job that covered exactly one of
+the many ways a scan can fail silently.
 
 **A caller must grant the union of permissions every called job declares.**
 Permissions only narrow down a reusable-workflow chain. Granting less than the
@@ -121,7 +125,9 @@ the chain is validated before any condition is evaluated, so the Scorecard job's
 ```yaml
 permissions:
   contents: read
-  actions: read # osv-scanner
-  security-events: write # osv-scanner
   id-token: write # Scorecard — required even when scorecard: false
 ```
+
+Callers upgrading from v1.1.0 can drop `actions: read` and
+`security-events: write`. Those were Google's reusable workflow's requirements;
+v1.2.0 no longer uses it.
