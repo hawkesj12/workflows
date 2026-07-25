@@ -50,7 +50,7 @@ jobs:
       # in the diff, and publishing needs an OIDC token a fork PR cannot mint —
       # so on a PR it would either fail for the wrong reason or grade a state
       # this change cannot affect. Scorecard belongs on the caller's schedule.
-      scorecard: false
+      scorecard: true # TEMP — proving the branch gate skips rather than fails
       # This repo is YAML and Markdown — no dependencies, so nothing for a CVE
       # scan to read. Declared rather than left to a silent pass: the CVE job
       # SKIPS, and the claim is a line someone wrote and can argue with instead
