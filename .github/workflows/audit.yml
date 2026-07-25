@@ -49,6 +49,11 @@ jobs:
   # Cheap and fast — nothing here reaches the network beyond the checkout.
   workflow-security:
     name: zizmor (workflow security)
+    # A hung job does not go RED, it goes QUIET — and quiet is
+    # indistinguishable from healthy. Without this every job inherits
+    # GitHub's 360-minute default, so the exact failure this audit exists to
+    # prevent could sit undetected for six hours.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -65,6 +70,11 @@ jobs:
   # while nothing in your repo changes.
   links:
     name: lychee (dead links)
+    # A hung job does not go RED, it goes QUIET — and quiet is
+    # indistinguishable from healthy. Without this every job inherits
+    # GitHub's 360-minute default, so the exact failure this audit exists to
+    # prevent could sit undetected for six hours.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -107,6 +117,11 @@ jobs:
   # ecosystem/lockfile-format support, which is a deliberate upgrade, not a race.
   vulnerabilities:
     name: osv-scanner (CVEs)
+    # A hung job does not go RED, it goes QUIET — and quiet is
+    # indistinguishable from healthy. Without this every job inherits
+    # GitHub's 360-minute default, so the exact failure this audit exists to
+    # prevent could sit undetected for six hours.
+    timeout-minutes: 10
     # `deps: none` skips this job. A skipped job is an honest "nothing to scan";
     # a passing one that scanned nothing is not. There is deliberately no third
     # option that reports success without a real scan.
@@ -128,7 +143,12 @@ jobs:
         run: |
           set -euo pipefail
           URL="https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
-          curl --fail --silent --show-error --location --retry 3 -o osv-scanner "$URL"
+          # --max-time bounds the whole transfer; --retry-all-errors is what makes
+          # --retry cover a connection reset (plain --retry only covers transient
+          # HTTP codes), which is the CDN flake you actually see.
+          curl --fail --silent --show-error --location \
+            --connect-timeout 10 --max-time 120 --retry 3 --retry-all-errors \
+            -o osv-scanner "$URL"
           echo "${OSV_SHA256}  osv-scanner" | sha256sum --check --status \
             || { echo "::error::osv-scanner checksum mismatch — refusing to run it"; exit 1; }
           chmod +x osv-scanner
@@ -151,6 +171,11 @@ jobs:
   # meaningless green. Skipping reads as "not applicable here"; failing lies.
   posture:
     name: scorecard (repo posture)
+    # A hung job does not go RED, it goes QUIET — and quiet is
+    # indistinguishable from healthy. Without this every job inherits
+    # GitHub's 360-minute default, so the exact failure this audit exists to
+    # prevent could sit undetected for six hours.
+    timeout-minutes: 15
     if: inputs.scorecard && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     permissions:

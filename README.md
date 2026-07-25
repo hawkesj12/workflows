@@ -124,9 +124,45 @@ Two of the four checks are exposed to this, and they are handled differently:
   repo genuinely has no dependencies, say so with `deps: none` and the CVE job is
   **skipped**.
 
-There is deliberately no setting that produces a green CVE job without a real scan.
-It scans, it skips, or it fails — and `deps: none` is a claim written in your
-workflow file that a reviewer can disagree with, not an absence nobody notices.
+There is deliberately no setting that produces a green CVE job having scanned
+**nothing**. It scans something, it skips, or it fails — and `deps: none` is a claim
+written in your workflow file that a reviewer can disagree with, not an absence
+nobody notices.
+
+### What a green CVE job does and does not mean
+
+That guarantee is narrower than it first reads, and the difference matters because
+it is the same distinction the rest of this document polices.
+
+**Exit 0 means: at least one package source was found, scanned, and was clean.** It
+does **not** mean every dependency in the repo was examined. osv-scanner skips
+manifest formats it does not support, silently, and a single recognized source is
+enough to produce a green for the whole repo. Measured:
+
+```
+package-lock.json  (clean, 1 package)   ← recognized, scanned
+environment.yml    (requests==2.19.1)   ← NOT a supported format, skipped
+→ exit 0, "No issues found"
+```
+
+`requests==2.19.1` carries multiple published advisories. The job is green anyway.
+
+Two consequences worth internalizing:
+
+- **Check that your real dependency manifest is one osv-scanner reads.** The log
+  line names every file it scanned — `Scanned .../uv.lock file and found 33
+packages`. If your actual manifest is not in that list, the lane is not covering
+  it, whatever colour the badge is.
+- **A `.gitignore`d lockfile is skipped too**, but that case alone fails closed: a
+  repo whose only lockfile is gitignored produces "No package sources found" and
+  exit 128, which is red. The risk is the _combination_ — a gitignored lockfile
+  beside a recognized one goes green while skipping the first.
+
+`--no-ignore` is deliberately **not** enabled. It does not address the larger gap —
+an unsupported format is skipped whether or not it is gitignored, so `--no-ignore`
+changes nothing about the case above. And on a repo with a gitignored virtualenv it
+scans the _installed environment_ rather than the declared dependencies, which is a
+different question with a much noisier answer. Add it per-repo if you want it.
 
 The general lesson, which cost two wrong fixes to learn: **check what your tooling
 does with the exit code before building anything around it.** v1.1.0 added a
