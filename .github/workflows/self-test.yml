@@ -68,6 +68,10 @@ jobs:
     if: always()
     needs: audit-itself
     runs-on: ubuntu-latest
+    # The sibling `audit-itself` job genuinely cannot take one — timeout-minutes is
+    # not a valid key on a `uses:` job — so this is the only place in this file it
+    # can go. Not an oversight there.
+    timeout-minutes: 5
     steps:
       - name: The audit must have succeeded against this repo
         run: |

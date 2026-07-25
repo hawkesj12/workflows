@@ -84,10 +84,17 @@ jobs:
           persist-credentials: false
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          # --max-retries absorbs a flaky host so a transient blip doesn't page you
-          # over someone else's downtime.
+          # --max-retries is lychee's own default; stated explicitly so a version
+          # bump can't silently lower it.
           args: --no-progress --max-retries 3 ${{ inputs.docs }}
           fail: true
+          # ASSERTED, not inherited. The red on a link-free run does NOT come from
+          # lychee — the binary exits 0 there. It comes from this action's
+          # failIfEmpty, implemented as a grep for "Total | 0" against its markdown
+          # summary. Two ways that silently stops guarding: the default flips on a
+          # Dependabot bump, or a caller puts `--format json` in `docs` so the grep
+          # has no markdown to match. Pinning it here makes the guarantee ours.
+          failIfEmpty: true
 
   # ── Known vulnerabilities ────────────────────────────────────────────
   # The other genuinely level-triggered check: a CVE published today against a
@@ -143,11 +150,14 @@ jobs:
         run: |
           set -euo pipefail
           URL="https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
-          # --max-time bounds the whole transfer; --retry-all-errors is what makes
-          # --retry cover a connection reset (plain --retry only covers transient
-          # HTTP codes), which is the CDN flake you actually see.
+          # --max-time bounds EACH ATTEMPT, not the whole transfer, and resets on
+          # every retry — so --max-time 120 --retry 3 is a ~8 minute worst case, not
+          # a 2 minute one. --retry-max-time is what actually caps the total.
+          # --retry-all-errors is what makes --retry cover a connection reset;
+          # plain --retry only covers transient HTTP codes.
           curl --fail --silent --show-error --location \
-            --connect-timeout 10 --max-time 120 --retry 3 --retry-all-errors \
+            --connect-timeout 10 --max-time 120 \
+            --retry 3 --retry-all-errors --retry-max-time 180 \
             -o osv-scanner "$URL"
           echo "${OSV_SHA256}  osv-scanner" | sha256sum --check --status \
             || { echo "::error::osv-scanner checksum mismatch — refusing to run it"; exit 1; }
