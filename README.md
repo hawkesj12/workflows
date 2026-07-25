@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   audit:
-    uses: hawkesj12/workflows/.github/workflows/audit.yml@v1.2.0
+    uses: hawkesj12/workflows/.github/workflows/audit.yml@b9731f4424a17b40028315c3e5a1fe7612c4752a # v1.2.1
     permissions:
       # The UNION of what every called job declares — see Notes. Omitting any of
       # these is a startup_failure with no log.
@@ -48,18 +48,33 @@ That's the whole integration. Two things to get right, both covered in Notes:
 commit a **lockfile** so the CVE scan has a target, and grant the **full
 permissions block** above.
 
+> The SHA above is whatever was current when this section was last edited, and
+> nothing enforces that it stays current — check
+> [Releases](https://github.com/hawkesj12/workflows/releases) for the latest. Once
+> a repo is onboarded this stops mattering: Dependabot bumps the caller's pin, not
+> this example.
+
 ## Versioning
 
-Pin a **tag**, not `@main`. Not because this repo is untrusted — it's mine — but
-because `@main` has no staging channel: every caller's next scheduled run
-executes whatever was last pushed here, and you learn from failure emails instead
-of a diff. A tag makes `main` the place changes get tried (gated by
-`self-test.yml`, which runs the audit against this repo on every PR) and the tag
-the thing the fleet actually runs.
+Pin a **commit SHA with the version in a trailing comment**, as above — not
+`@main`, and not a bare tag.
 
-Dependabot maintains the pin for you — its `github-actions` ecosystem
+Not pinning `@main` isn't about trusting this repo; it's mine. It's that `@main`
+has no staging channel: every caller's next scheduled run executes whatever was
+last pushed here, and you learn from failure emails instead of a diff. A pin makes
+`main` the place changes get tried — gated by `self-test.yml`, which runs the audit
+against this repo on every PR — and the pinned commit the thing the fleet actually
+runs.
+
+The SHA rather than the tag is so callers pass their own `zizmor` audit without an
+exception file. zizmor's `unpinned-uses` defaults to a blanket hash-pin policy, and
+a `ref-pin` exception for `hawkesj12/*` would accept `@main` too — an exception that
+doesn't enforce what it claims. A SHA needs no exception.
+
+Dependabot maintains the pin either way — its `github-actions` ecosystem
 [covers reusable-workflow references](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/keeping-your-actions-up-to-date-with-dependabot),
-so each caller gets its own PR on a new release and converges on your merge.
+so each caller gets its own PR on a new release, runs its own CI against it, and
+converges on your merge.
 
 ## What it runs
 
@@ -74,11 +89,11 @@ Jobs are independent — one failing never hides another.
 
 ## Inputs
 
-| Input       | Default     | Notes                                                                                                                         |
-| ----------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `docs`      | `README.md` | space-separated files/globs for lychee                                                                                        |
-| `scorecard` | `false`     | **public repos only** — it needs `id-token: write` and publishes to the public OpenSSF API                                    |
-| `deps`      | `auto`      | `auto` scans; osv-scanner fails on its own if it finds no packages. `none` declares the repo dependency-free and **skips** the CVE job |
+| Input       | Default     | Notes                                                                                                                                   |
+| ----------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs`      | `README.md` | space-separated files/globs for lychee                                                                                                  |
+| `scorecard` | `false`     | **public repos only** — it needs `id-token: write` and publishes to the public OpenSSF API. Runs on the default branch only (see Notes) |
+| `deps`      | `auto`      | `auto` scans; osv-scanner fails on its own if it finds no packages. `none` declares the repo dependency-free and **skips** the CVE job  |
 
 ## Notes
 
@@ -121,6 +136,13 @@ assumption it preserved the exit code — it does not. Only running the binary d
 and that was settled by pushing each version at a repo with no lockfile and reading
 the result, not by reasoning about it.
 
+**A red that always fires is the same disease as a meaningless green.** Both teach
+you to stop reading the signal. That's why Scorecard runs on the **default branch
+only** (v1.2.1): it exits `validating options: only default branch is supported` on
+any other ref, so a caller using `workflow_dispatch` from a branch used to get a
+guaranteed red for a reason unrelated to its repo. It now **skips** there instead —
+"not applicable here" rather than a lie.
+
 **A caller must grant the union of permissions every called job declares.**
 Permissions only narrow down a reusable-workflow chain. Granting less than the
 callee asks for is a `startup_failure` with no jobs, no log, and no annotation —
@@ -137,3 +159,20 @@ permissions:
 Callers upgrading from v1.1.0 can drop `actions: read` and
 `security-events: write`. Those were Google's reusable workflow's requirements;
 v1.2.0 no longer uses it.
+
+**A quiet public repo loses its audit silently.** GitHub
+[disables scheduled workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
+in a **public** repository after 60 days with no repository activity. A finished
+project that sits for two months stops being audited, and the mechanism that was
+supposed to tell you things stops telling you. Private repos are unaffected. If you
+onboard a repo you expect to go quiet, either touch it occasionally or accept that
+its audit is dormant — don't assume green means checked.
+
+## Releases
+
+| Version  | Change                                                                                 |
+| -------- | -------------------------------------------------------------------------------------- |
+| `v1.2.1` | Scorecard runs on the default branch only; skips elsewhere instead of failing          |
+| `v1.2.0` | Run the pinned, checksum-verified osv-scanner binary; delete the lockfile precondition |
+| `v1.1.0` | (superseded) lockfile precondition for the CVE lane                                    |
+| `v1.0.0` | Initial: zizmor, lychee, osv-scanner, Scorecard                                        |
