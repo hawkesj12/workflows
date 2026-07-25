@@ -33,7 +33,8 @@ permissions:
 
 jobs:
   audit:
-    uses: hawkesj12/workflows/.github/workflows/audit.yml@84b6fa2db9023aaed2f27eb07738437be6cb2f7c # v1.2.2
+    # ⬇ Copy the exact line from the latest release — see Versioning below.
+    uses: hawkesj12/workflows/.github/workflows/audit.yml@<SHA> # <version>
     permissions:
       # The UNION of what every called job declares — see Notes. Omitting any of
       # these is a startup_failure with no log.
@@ -48,11 +49,16 @@ That's the whole integration. Two things to get right, both covered in Notes:
 commit a **lockfile** so the CVE scan has a target, and grant the **full
 permissions block** above.
 
-> The SHA above is whatever was current when this section was last edited, and
-> nothing enforces that it stays current — check
-> [Releases](https://github.com/hawkesj12/workflows/releases) for the latest. Once
-> a repo is onboarded this stops mattering: Dependabot bumps the caller's pin, not
-> this example.
+> **The `<SHA>` is a placeholder on purpose.** A hardcoded pin here is stale one
+> release later and nothing enforces it — which is drift, in the repo whose whole
+> premise is not drifting. So the exact line lives in
+> [Releases](https://github.com/hawkesj12/workflows/releases) instead, where it is
+> written at release time and cannot go out of date. Every release body carries a
+> paste-ready `uses:` line.
+>
+> Pasting `<SHA>` literally fails `actionlint` immediately, so a wrong paste is loud
+> rather than silently a version behind. And once a repo is onboarded this stops
+> mattering entirely: Dependabot bumps the caller's pin from then on.
 
 ## Versioning
 
@@ -79,7 +85,7 @@ converges on your merge.
 ## What it runs
 
 | Job                 | Tool                                                         | Catches                                                  |
-| ------------------- | ------------------------------------------------------------ | -------------------------------------------------------- |
+|---------------------|--------------------------------------------------------------|----------------------------------------------------------|
 | `workflow-security` | [zizmor](https://docs.zizmor.sh/)                            | template injection, credential leakage, unpinned actions |
 | `links`             | [lychee](https://lychee.cli.rs/)                             | dead links in your docs                                  |
 | `vulnerabilities`   | [osv-scanner](https://google.github.io/osv-scanner/)         | known CVEs in your dependencies                          |
@@ -90,7 +96,7 @@ Jobs are independent — one failing never hides another.
 ## Inputs
 
 | Input       | Default     | Notes                                                                                                                                   |
-| ----------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+|-------------|-------------|-----------------------------------------------------------------------------------------------------------------------------------------|
 | `docs`      | `README.md` | space-separated files/globs for lychee                                                                                                  |
 | `scorecard` | `false`     | **public repos only** — it needs `id-token: write` and publishes to the public OpenSSF API. Runs on the default branch only (see Notes) |
 | `deps`      | `auto`      | `auto` scans; osv-scanner fails on its own if it finds no packages. `none` declares the repo dependency-free and **skips** the CVE job  |
@@ -219,8 +225,8 @@ its audit is dormant — don't assume green means checked.
 ## Releases
 
 | Version  | Change                                                                                 |
-| -------- | -------------------------------------------------------------------------------------- |
-| `v1.2.2` | Bound every job with a timeout; narrow the CVE guarantee to what it provides |
+|----------|----------------------------------------------------------------------------------------|
+| `v1.2.2` | Bound every job with a timeout; narrow the CVE guarantee to what it provides           |
 | `v1.2.1` | Scorecard runs on the default branch only; skips elsewhere instead of failing          |
 | `v1.2.0` | Run the pinned, checksum-verified osv-scanner binary; delete the lockfile precondition |
 | `v1.1.0` | (superseded) lockfile precondition for the CVE lane                                    |
