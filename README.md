@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   audit:
-    uses: hawkesj12/workflows/.github/workflows/audit.yml@b9731f4424a17b40028315c3e5a1fe7612c4752a # v1.2.1
+    uses: hawkesj12/workflows/.github/workflows/audit.yml@84b6fa2db9023aaed2f27eb07738437be6cb2f7c # v1.2.2
     permissions:
       # The UNION of what every called job declares — see Notes. Omitting any of
       # these is a startup_failure with no log.
@@ -110,10 +110,16 @@ A green shield then reads as "no CVEs" when it means "no scan."
 
 Two of the four checks are exposed to this, and they are handled differently:
 
-- **`lychee` fails closed on its own.** Given files with no links it exits non-zero
-  with "No links were found. This usually indicates a configuration error." Take it
-  as a real signal: either the glob is wrong, or the doc should be linking things it
-  isn't. (This is exactly how it caught its own repo's unlinked README.)
+- **The links lane fails closed — but the guard is the action's, not lychee's.**
+  Measured: the `lychee` binary given a link-free file exits **0**. The red comes
+  from `lychee-action`'s `failIfEmpty`, which greps its own markdown summary for
+  `Total | 0`. That is a third-party wrapper default doing load-bearing work, which
+  is exactly what the CVE lane refuses wrappers for — so this audit **asserts**
+  `failIfEmpty: true` rather than inheriting it. Two ways it would otherwise stop
+  guarding silently: the default flips on a version bump, or a caller puts
+  `--format json` in `docs` and the grep has no markdown to match. When it does
+  fire, take it as a real signal — either the glob is wrong, or the doc should be
+  linking things it isn't. (This is how it caught its own repo's unlinked README.)
 - **`osv-scanner` also fails closed — but only if you run the binary.** It exits
   128 with "No package sources found", and both of Google's wrappers throw that
   away. The reusable workflow runs the scanner with `continue-on-error: true` and
@@ -158,11 +164,17 @@ packages`. If your actual manifest is not in that list, the lane is not covering
   exit 128, which is red. The risk is the _combination_ — a gitignored lockfile
   beside a recognized one goes green while skipping the first.
 
-`--no-ignore` is deliberately **not** enabled. It does not address the larger gap —
-an unsupported format is skipped whether or not it is gitignored, so `--no-ignore`
-changes nothing about the case above. And on a repo with a gitignored virtualenv it
-scans the _installed environment_ rather than the declared dependencies, which is a
-different question with a much noisier answer. Add it per-repo if you want it.
+`--no-ignore` is deliberately **not** enabled, and the reason is narrower than it
+first looks. It does **not** address the gap above: an unsupported format is skipped
+whether or not it is gitignored, so the flag changes nothing about that case
+(verified — exit 0 either way).
+
+What it actually does is pull in gitignored _declared manifests_ — a gitignored
+`vendor/requirements.txt` goes from skipped to scanned. It does **not** scan an
+installed virtualenv: `scan source` has no installed-artifact extractor, so a
+gitignored `.venv` full of `dist-info` is invisible with or without the flag
+(verified — exit 128 both ways). Leave it off unless you deliberately gitignore a
+real manifest, in which case turn it on per-repo.
 
 The general lesson, which cost two wrong fixes to learn: **check what your tooling
 does with the exit code before building anything around it.** v1.1.0 added a
@@ -208,6 +220,7 @@ its audit is dormant — don't assume green means checked.
 
 | Version  | Change                                                                                 |
 | -------- | -------------------------------------------------------------------------------------- |
+| `v1.2.2` | Bound every job with a timeout; narrow the CVE guarantee to what it provides |
 | `v1.2.1` | Scorecard runs on the default branch only; skips elsewhere instead of failing          |
 | `v1.2.0` | Run the pinned, checksum-verified osv-scanner binary; delete the lockfile precondition |
 | `v1.1.0` | (superseded) lockfile precondition for the CVE lane                                    |
