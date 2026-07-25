@@ -53,12 +53,14 @@ permissions block** above.
 > release later and nothing enforces it — which is drift, in the repo whose whole
 > premise is not drifting. So the exact line lives in
 > [Releases](https://github.com/hawkesj12/workflows/releases) instead, where it is
-> written at release time and cannot go out of date. Every release body carries a
-> paste-ready `uses:` line.
+> written at release time and cannot go out of date. The latest release body opens
+> with a paste-ready `uses:` line.
 >
-> Pasting `<SHA>` literally fails `actionlint` immediately, so a wrong paste is loud
-> rather than silently a version behind. And once a repo is onboarded this stops
-> mattering entirely: Dependabot bumps the caller's pin from then on.
+> Pasting `<SHA>` literally is caught by this audit's own first job: zizmor's
+> `unpinned-uses` flags it High and exits non-zero, so a wrong paste is loud on the
+> very first run rather than silently a version behind. (`actionlint` does **not**
+> catch it — measured, exit 0.) And once a repo is onboarded this stops mattering
+> entirely: Dependabot bumps the caller's pin from then on.
 
 ## Versioning
 
@@ -85,7 +87,7 @@ converges on your merge.
 ## What it runs
 
 | Job                 | Tool                                                         | Catches                                                  |
-|---------------------|--------------------------------------------------------------|----------------------------------------------------------|
+| ------------------- | ------------------------------------------------------------ | -------------------------------------------------------- |
 | `workflow-security` | [zizmor](https://docs.zizmor.sh/)                            | template injection, credential leakage, unpinned actions |
 | `links`             | [lychee](https://lychee.cli.rs/)                             | dead links in your docs                                  |
 | `vulnerabilities`   | [osv-scanner](https://google.github.io/osv-scanner/)         | known CVEs in your dependencies                          |
@@ -96,7 +98,7 @@ Jobs are independent — one failing never hides another.
 ## Inputs
 
 | Input       | Default     | Notes                                                                                                                                   |
-|-------------|-------------|-----------------------------------------------------------------------------------------------------------------------------------------|
+| ----------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `docs`      | `README.md` | space-separated files/globs for lychee                                                                                                  |
 | `scorecard` | `false`     | **public repos only** — it needs `id-token: write` and publishes to the public OpenSSF API. Runs on the default branch only (see Notes) |
 | `deps`      | `auto`      | `auto` scans; osv-scanner fails on its own if it finds no packages. `none` declares the repo dependency-free and **skips** the CVE job  |
@@ -224,10 +226,11 @@ its audit is dormant — don't assume green means checked.
 
 ## Releases
 
-| Version  | Change                                                                                 |
-|----------|----------------------------------------------------------------------------------------|
-| `v1.2.2` | Bound every job with a timeout; narrow the CVE guarantee to what it provides           |
-| `v1.2.1` | Scorecard runs on the default branch only; skips elsewhere instead of failing          |
-| `v1.2.0` | Run the pinned, checksum-verified osv-scanner binary; delete the lockfile precondition |
-| `v1.1.0` | (superseded) lockfile precondition for the CVE lane                                    |
-| `v1.0.0` | Initial: zizmor, lychee, osv-scanner, Scorecard                                        |
+[**Releases**](https://github.com/hawkesj12/workflows/releases) — what changed in each
+version, and the paste-ready pin for the latest.
+
+There is deliberately no changelog table here. A hand-maintained copy of the release
+list is the same defect as a hardcoded pin: it is written once, nothing checks it, and
+it is wrong by the next release. This one went stale three times in a day before it
+was deleted. The release bodies are written at release time and cannot drift from
+themselves.
