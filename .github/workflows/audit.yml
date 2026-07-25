@@ -4,7 +4,10 @@ name: Audit
 #
 #   jobs:
 #     audit:
-#       uses: hawkesj12/workflows/.github/workflows/audit.yml@main
+#       uses: hawkesj12/workflows/.github/workflows/audit.yml@<SHA> # <version>
+#
+# Pin a SHA, never @main — the exact line for the current release is in that
+# release's body: https://github.com/hawkesj12/workflows/releases
 #
 # It exists because these four checks find problems that appear WITHOUT your code
 # changing: a CVE gets published against a dependency you haven't touched, a link
